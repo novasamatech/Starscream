@@ -37,7 +37,6 @@ public class FoundationTransport: NSObject, Transport, StreamDelegate {
     private var onConnect: ((InputStream, OutputStream) -> Void)?
     private var isTLS = false
     private var certPinner: CertificatePinning?
-    private let clearMutex = DispatchSemaphore(value: 1)
     
     public var usingTLS: Bool {
         return self.isTLS
@@ -96,25 +95,24 @@ public class FoundationTransport: NSObject, Transport, StreamDelegate {
     }
     
     public func disconnect() {
-        clearMutex.wait()
+        workQueue.async {
 
-        defer {
-            clearMutex.signal()
-        }
+            if let stream = self.inputStream {
+                stream.delegate = nil
+                CFReadStreamSetDispatchQueue(stream, nil)
+                stream.close()
+            }
 
-        if let stream = inputStream {
-            stream.delegate = nil
-            CFReadStreamSetDispatchQueue(stream, nil)
-            stream.close()
+            if let stream = self.outputStream {
+                stream.delegate = nil
+                CFWriteStreamSetDispatchQueue(stream, nil)
+                stream.close()
+            }
+
+            self.isOpen = false
+            self.outputStream = nil
+            self.inputStream = nil
         }
-        if let stream = outputStream {
-            stream.delegate = nil
-            CFWriteStreamSetDispatchQueue(stream, nil)
-            stream.close()
-        }
-        isOpen = false
-        outputStream = nil
-        inputStream = nil
     }
     
     public func register(delegate: TransportEventClient) {
