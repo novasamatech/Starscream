@@ -95,24 +95,21 @@ public class FoundationTransport: NSObject, Transport, StreamDelegate {
     }
     
     public func disconnect() {
-        workQueue.async {
-
-            if let stream = self.inputStream {
-                stream.delegate = nil
-                CFReadStreamSetDispatchQueue(stream, nil)
-                stream.close()
-            }
-
-            if let stream = self.outputStream {
-                stream.delegate = nil
-                CFWriteStreamSetDispatchQueue(stream, nil)
-                stream.close()
-            }
-
-            self.isOpen = false
-            self.outputStream = nil
-            self.inputStream = nil
+        if let stream = self.inputStream {
+            stream.delegate = nil
+            CFReadStreamSetDispatchQueue(stream, nil)
+            stream.close()
         }
+
+        if let stream = self.outputStream {
+            stream.delegate = nil
+            CFWriteStreamSetDispatchQueue(stream, nil)
+            stream.close()
+        }
+
+        self.isOpen = false
+        self.outputStream = nil
+        self.inputStream = nil
     }
     
     public func register(delegate: TransportEventClient) {

@@ -64,7 +64,10 @@ FrameCollectorDelegate, HTTPHandlerDelegate {
         guard let url = request.url else {
             return
         }
-        transport.connect(url: url, timeout: request.timeoutInterval, certificatePinning: certPinner)
+
+        writeQueue.async {
+            self.transport.connect(url: url, timeout: request.timeoutInterval, certificatePinning: self.certPinner)
+        }
     }
     
     public func stop(closeCode: UInt16 = CloseCode.normal.rawValue) {
@@ -79,7 +82,9 @@ FrameCollectorDelegate, HTTPHandlerDelegate {
     }
     
     public func forceStop() {
-        transport.disconnect()
+        writeQueue.async {
+            self.transport.disconnect()
+        }
     }
     
     public func write(string: String, completion: (() -> ())?) {
