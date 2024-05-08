@@ -40,6 +40,10 @@ public class TCPTransport: Transport {
         return self.isTLS
     }
     
+    deinit {
+        disconnect()
+    }
+    
     public init(connection: NWConnection) {
         self.connection = connection
         start()
@@ -85,6 +89,7 @@ public class TCPTransport: Transport {
     public func disconnect() {
         isRunning = false
         connection?.cancel()
+        connection = nil
     }
     
     public func register(delegate: TransportEventClient) {
