@@ -70,7 +70,7 @@ public struct HTTPWSHeader {
             let val = "permessage-deflate; client_max_window_bits; server_max_window_bits=15"
             req.setValue(val, forHTTPHeaderField: HTTPWSHeader.extensionName)
         }
-        let hostValue = req.allHTTPHeaderFields?[HTTPWSHeader.hostName] ?? "\(parts.host):\(parts.port)"
+        let hostValue = req.allHTTPHeaderFields?[HTTPWSHeader.hostName] ?? "\(parts.host)"
         req.setValue(hostValue, forHTTPHeaderField: HTTPWSHeader.hostName)
         return req
     }
