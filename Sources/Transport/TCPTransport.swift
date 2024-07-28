@@ -35,6 +35,7 @@ public class TCPTransport: Transport {
     private weak var delegate: TransportEventClient?
     private var isRunning = false
     private var isTLS = false
+    private var timeout: Double = 10.0
     
     public var usingTLS: Bool {
         return self.isTLS
@@ -58,9 +59,8 @@ public class TCPTransport: Transport {
             delegate?.connectionChanged(state: .failed(TCPTransportError.invalidRequest))
             return
         }
+        self.timeout = timeout
         self.isTLS = parts.isTLS
-        let options = NWProtocolTCP.Options()
-        options.connectionTimeout = Int(timeout.rounded(.up))
 
         let tlsOptions = isTLS ? NWProtocolTLS.Options() : nil
         if let tlsOpts = tlsOptions {
@@ -80,7 +80,7 @@ public class TCPTransport: Transport {
                 })
             }, queue)
         }
-        let parameters = NWParameters(tls: tlsOptions, tcp: options)
+        let parameters = NWParameters(tls: tlsOptions)
         let conn = NWConnection(host: NWEndpoint.Host.name(parts.host, nil), port: NWEndpoint.Port(rawValue: UInt16(parts.port))!, using: parameters)
         connection = conn
         start()
@@ -131,7 +131,22 @@ public class TCPTransport: Transport {
             self?.delegate?.connectionChanged(state: .shouldReconnect(isBetter))
         }
         
-        conn.start(queue: queue)
+        start(conn, with: timeout)
+    }
+    
+    private func start(
+        _ connection: NWConnection,
+        with timeout: Double
+    ) {
+        let roundedTimeout = Int(timeout.rounded(.up))
+        connection.start(queue: queue)
+        
+        queue.asyncAfter(deadline: .now() + .seconds(roundedTimeout)) {
+            if connection.state != .ready {
+                connection.stateUpdateHandler?(.waiting(.posix(.ETIMEDOUT)))
+            }
+        }
+        
         isRunning = true
         readLoop()
     }
