@@ -36,6 +36,9 @@ public class TCPTransport: Transport {
     private var isRunning = false
     private var isTLS = false
     private var timeout: Double = 10.0
+    private var timeoutTimer: DispatchSourceTimer?
+    
+    private let mutex = NSLock()
     
     public var usingTLS: Bool {
         return self.isTLS
@@ -87,6 +90,7 @@ public class TCPTransport: Transport {
     }
     
     public func disconnect() {
+        removeTimeoutTimer()
         isRunning = false
         connection?.cancel()
         connection = nil
@@ -109,6 +113,7 @@ public class TCPTransport: Transport {
         conn.stateUpdateHandler = { [weak self] (newState) in
             switch newState {
             case .ready:
+                self?.removeTimeoutTimer()
                 self?.delegate?.connectionChanged(state: .connected)
             case .waiting(let error):
                 self?.delegate?.connectionChanged(state: .waiting(error))
@@ -138,14 +143,25 @@ public class TCPTransport: Transport {
         _ connection: NWConnection,
         with timeout: Double
     ) {
+        removeTimeoutTimer()
+        
         let roundedTimeout = Int(timeout.rounded(.up))
         connection.start(queue: queue)
         
-        queue.asyncAfter(deadline: .now() + .seconds(roundedTimeout)) {
-            if connection.state != .ready {
-                connection.stateUpdateHandler?(.waiting(.posix(.ETIMEDOUT)))
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        
+        timer.setEventHandler { [weak self] in
+            if self?.connection?.state != .ready {
+                self?.connection?.stateUpdateHandler?(.failed(.posix(.ETIMEDOUT)))
             }
         }
+        
+        timer.schedule(deadline: .now() + .seconds(roundedTimeout))
+        timer.resume()
+        
+        mutex.lock()
+        self.timeoutTimer = timer
+        mutex.unlock()
         
         isRunning = true
         readLoop()
@@ -172,6 +188,15 @@ public class TCPTransport: Transport {
             }
 
         })
+    }
+    
+    private func removeTimeoutTimer() {
+        mutex.lock()
+        
+        timeoutTimer?.cancel()
+        timeoutTimer = nil
+        
+        mutex.unlock()
     }
 }
 #else
