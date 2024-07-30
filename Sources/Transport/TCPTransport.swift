@@ -35,6 +35,10 @@ public class TCPTransport: Transport {
     private weak var delegate: TransportEventClient?
     private var isRunning = false
     private var isTLS = false
+    private var timeout: Double = 10.0
+    private var timeoutTimer: DispatchSourceTimer?
+    
+    private let mutex = NSLock()
     
     public var usingTLS: Bool {
         return self.isTLS
@@ -58,9 +62,8 @@ public class TCPTransport: Transport {
             delegate?.connectionChanged(state: .failed(TCPTransportError.invalidRequest))
             return
         }
+        self.timeout = timeout
         self.isTLS = parts.isTLS
-        let options = NWProtocolTCP.Options()
-        options.connectionTimeout = Int(timeout.rounded(.up))
 
         let tlsOptions = isTLS ? NWProtocolTLS.Options() : nil
         if let tlsOpts = tlsOptions {
@@ -80,13 +83,14 @@ public class TCPTransport: Transport {
                 })
             }, queue)
         }
-        let parameters = NWParameters(tls: tlsOptions, tcp: options)
+        let parameters = NWParameters(tls: tlsOptions)
         let conn = NWConnection(host: NWEndpoint.Host.name(parts.host, nil), port: NWEndpoint.Port(rawValue: UInt16(parts.port))!, using: parameters)
         connection = conn
         start()
     }
     
     public func disconnect() {
+        removeTimeoutTimer()
         isRunning = false
         connection?.cancel()
         connection = nil
@@ -109,13 +113,12 @@ public class TCPTransport: Transport {
         conn.stateUpdateHandler = { [weak self] (newState) in
             switch newState {
             case .ready:
+                self?.removeTimeoutTimer()
                 self?.delegate?.connectionChanged(state: .connected)
-            case .waiting:
-                self?.delegate?.connectionChanged(state: .waiting)
+            case .waiting(let error), .failed(let error):
+                self?.delegate?.connectionChanged(state: .failed(error))
             case .cancelled:
                 self?.delegate?.connectionChanged(state: .cancelled)
-            case .failed(let error):
-                self?.delegate?.connectionChanged(state: .failed(error))
             case .setup, .preparing:
                 break
             @unknown default:
@@ -131,7 +134,33 @@ public class TCPTransport: Transport {
             self?.delegate?.connectionChanged(state: .shouldReconnect(isBetter))
         }
         
-        conn.start(queue: queue)
+        start(conn, with: timeout)
+    }
+    
+    private func start(
+        _ connection: NWConnection,
+        with timeout: Double
+    ) {
+        removeTimeoutTimer()
+        
+        let roundedTimeout = Int(timeout.rounded(.up))
+        connection.start(queue: queue)
+        
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        
+        timer.setEventHandler { [weak self] in
+            if self?.connection?.state != .ready {
+                self?.connection?.stateUpdateHandler?(.failed(.posix(.ETIMEDOUT)))
+            }
+        }
+        
+        timer.schedule(deadline: .now() + .seconds(roundedTimeout))
+        timer.resume()
+        
+        mutex.lock()
+        self.timeoutTimer = timer
+        mutex.unlock()
+        
         isRunning = true
         readLoop()
     }
@@ -157,6 +186,15 @@ public class TCPTransport: Transport {
             }
 
         })
+    }
+    
+    private func removeTimeoutTimer() {
+        mutex.lock()
+        
+        timeoutTimer?.cancel()
+        timeoutTimer = nil
+        
+        mutex.unlock()
     }
 }
 #else
