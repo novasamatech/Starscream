@@ -115,12 +115,10 @@ public class TCPTransport: Transport {
             case .ready:
                 self?.removeTimeoutTimer()
                 self?.delegate?.connectionChanged(state: .connected)
-            case .waiting(let error):
-                self?.delegate?.connectionChanged(state: .waiting(error))
+            case .waiting(let error), .failed(let error):
+                self?.delegate?.connectionChanged(state: .failed(error))
             case .cancelled:
                 self?.delegate?.connectionChanged(state: .cancelled)
-            case .failed(let error):
-                self?.delegate?.connectionChanged(state: .failed(error))
             case .setup, .preparing:
                 break
             @unknown default:

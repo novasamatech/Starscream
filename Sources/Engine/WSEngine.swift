@@ -125,7 +125,9 @@ FrameCollectorDelegate, HTTPHandlerDelegate {
             let wsReq = HTTPWSHeader.createUpgrade(request: request, supportsCompression: framer.supportsCompression(), secKeyValue: secKeyValue)
             let data = httpHandler.convert(request: wsReq)
             transport.write(data: data, completion: {_ in })
-        case .waiting(let error), .failed(let error):
+        case .waiting:
+            break
+        case .failed(let error):
             handleError(error)
         case .viability(let isViable):
             broadcast(event: .viabilityChanged(isViable))
